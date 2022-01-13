@@ -51,8 +51,6 @@ class SaveReminderViewModel(val app: Application, val dataSource: ReminderDataSo
     val latitude = MutableLiveData<Double>()
     val longitude = MutableLiveData<Double>()
 
-    //flag for geofence activation which enable saving of reminder
-    var canSaveReminder = false
 
     /*
     set the poi, title of poi to textview , latitude and longitude
@@ -111,6 +109,7 @@ class SaveReminderViewModel(val app: Application, val dataSource: ReminderDataSo
             )
             showLoading.value = false
             showToast.value = app.getString(R.string.reminder_saved)
+            navigationCommand.value = NavigationCommand.Back
         }
     }
 
@@ -157,10 +156,12 @@ class SaveReminderViewModel(val app: Application, val dataSource: ReminderDataSo
                         showSnackBar.value = app.applicationContext.getString(R.string.successful_GeoFence_Activation_message)
                         //we are sure here that all location permission is enabled
                         validateAndSaveReminder(reminderData)
+
                     }
                     addOnFailureListener{
                         Log.i("myTag","Failed!! Geofencing Failed")
                         showSnackBar.value =app.applicationContext.getString(R.string.failed_Geofence_Activation_Message)
+
                     }
                 }
 
