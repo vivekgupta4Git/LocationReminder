@@ -3,13 +3,15 @@ package com.udacity.project4.locationreminders.savereminder.selectreminderlocati
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
+import android.content.IntentSender
 import android.content.pm.PackageManager
 import android.content.res.Resources
 import android.location.Location
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Bundle
-import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.*
@@ -18,6 +20,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.ActivityCompat.requestPermissions
 import androidx.databinding.DataBindingUtil
 import androidx.fragment.app.Fragment
+import com.google.android.gms.common.api.ResolvableApiException
 import com.google.android.gms.location.*
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
@@ -31,6 +34,7 @@ import com.udacity.project4.base.BaseFragment
 import com.udacity.project4.base.BaseViewModel
 import com.udacity.project4.base.NavigationCommand
 import com.udacity.project4.databinding.FragmentSelectLocationBinding
+import com.udacity.project4.locationreminders.savereminder.SaveReminderFragment
 import com.udacity.project4.locationreminders.savereminder.SaveReminderViewModel
 import com.udacity.project4.utils.setDisplayHomeAsUpEnabled
 import org.koin.android.ext.android.inject
@@ -44,9 +48,6 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
     private lateinit var binding: FragmentSelectLocationBinding
     private lateinit var googleMap : GoogleMap
     private lateinit var fusedLocationProviderClient: FusedLocationProviderClient
-    private lateinit var locationRequest: LocationRequest
-    private lateinit var locationCallback: LocationCallback
-    private var currentLocation: Location? = null
 
 
     companion object{
@@ -71,7 +72,6 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
         val mapFragment = childFragmentManager.findFragmentById(R.id.map_fragment) as SupportMapFragment
         mapFragment.getMapAsync(this)
 
-
         return binding.root
     }
 
@@ -80,7 +80,6 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
      */
     private fun onLocationSelected(selectedPoi : PointOfInterest) {
         Log.i("myTag","Selected Poi (Lat & Long ) : ${selectedPoi.name}  (${selectedPoi.latLng.latitude} , ${selectedPoi.latLng.longitude})")
-       // _viewModel.showSnackBar.value = "Save Location"
 
         Snackbar.make(binding.root, "Save Location", Snackbar.LENGTH_INDEFINITE)
             .setAction("Save") {
@@ -88,7 +87,6 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
                 _viewModel.navigationCommand.postValue(
                     NavigationCommand.Back
                 )
-              //  fragmentManager?.popBackStack()
             }.show()
 
     }
@@ -120,27 +118,82 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
 
     override fun onMapReady(map: GoogleMap) {
         googleMap = map
-
-
-
         setMapStyle()
 
-
-        if (ActivityCompat.checkSelfPermission(requireContext(),
-                Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
-                requireContext(),
-                Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED
-        ) {
+        if (checkForSelfPermission()) {
             val permission = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION ,Manifest.permission.ACCESS_COARSE_LOCATION)
             requestPermissions(permission, REQUEST_CODE)
-
         }
         else{
-            enableMyLocation()
+            //foreground permission is enabled now ask for location
+            //Making sure
+            if(deviceLocationEnabled()) {
+             //location setting is enabled on user device
+                enableMyLocation()
+            }
+                else
+            {
+                //ask for user to enable location service
+                askUserToEnableLocationService()
+
+            }
         }
         setMapLongClick(map)
         setPoiClickListener(map)
     }
+
+    private fun askUserToEnableLocationService( resolve: Boolean = true){
+        val locationRequest = LocationRequest.create().apply {
+            priority = LocationRequest.PRIORITY_LOW_POWER
+        }
+
+        val builder = LocationSettingsRequest.Builder().addLocationRequest(locationRequest)
+
+        val settingClient = LocationServices.getSettingsClient(requireActivity())
+
+        val locationSettingResponseTask = settingClient.checkLocationSettings(builder.build())
+
+        locationSettingResponseTask.addOnFailureListener{
+                exception ->
+            if(exception is ResolvableApiException && resolve)
+            {
+                try {
+                    startIntentSenderForResult(exception.resolution.intentSender,
+                        REQUEST_CODE,null,0,0,0,null)
+
+                }catch (sendEx : IntentSender.SendIntentException){
+                    Log.e("myTag","Error : ${sendEx.message}")
+                }
+            }
+            else
+            {
+                Snackbar.make(binding.root,
+                    "TURN ON LOCATION SETTING", Snackbar.LENGTH_INDEFINITE)
+                    .setAction("Retry"){
+                        askUserToEnableLocationService()
+                    }.show()
+            }
+        }
+        locationSettingResponseTask.addOnCompleteListener {
+            Log.i("myTag","Settings Enabled")
+            if(it.isSuccessful)
+            {
+                enableMyLocation()
+            }
+        }
+    }
+
+    //from https://stackoverflow.com/questions/20210565/android-location-manager-get-gps-location-if-no-gps-then-get-to-network-provid
+    private fun deviceLocationEnabled(): Boolean {
+        val locationManager =
+            requireContext().getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+    }
+
+    private fun checkForSelfPermission(): Boolean = ActivityCompat.checkSelfPermission(requireContext(),
+        Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+        requireContext(),
+        Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED
 
     @SuppressLint("MissingPermission")
     private fun enableMyLocation(){
@@ -175,7 +228,7 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
             {
                 Snackbar.make(binding.root,
                 getString(R.string.permission_denied_explanation),
-                Snackbar.LENGTH_INDEFINITE)
+                Snackbar.LENGTH_INDEFINITE) // MAKING IT INDEFINITE TO LET USER ENABLE IF USER HAS OPTED FOR DON'T ASK AGAIN
                     .setAction("Enable") {
                         startActivity(Intent().apply {
                             action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS

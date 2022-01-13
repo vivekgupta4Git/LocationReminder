@@ -40,12 +40,6 @@ class SaveReminderViewModel(val app: Application, val dataSource: ReminderDataSo
         PendingIntent.getBroadcast(app.applicationContext ,0,intent, PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
-    private var _validatedNowStartGeofence = MutableLiveData<Boolean>()
-    val validatedNowStartGeofence : LiveData<Boolean>
-    get() = _validatedNowStartGeofence
-init {
-    _validatedNowStartGeofence.value = false
-}
 
     val reminderTitle = MutableLiveData<String?>()
     val reminderDescription = MutableLiveData<String?>()
@@ -57,7 +51,8 @@ init {
     val latitude = MutableLiveData<Double>()
     val longitude = MutableLiveData<Double>()
 
-
+    //flag for geofence activation which enable saving of reminder
+    var canSaveReminder = false
 
     /*
     set the poi, title of poi to textview , latitude and longitude
@@ -90,9 +85,7 @@ init {
      */
     fun validateAndSaveReminder(reminderData: ReminderDataItem) {
         if (validateEnteredData(reminderData)) {
-            saveReminder(reminderData)
-            _validatedNowStartGeofence.value = true
-            addGeofencing(reminderData.id)
+                saveReminder(reminderData)
         }
 
     }
@@ -118,7 +111,6 @@ init {
             )
             showLoading.value = false
             showToast.value = app.getString(R.string.reminder_saved)
-            navigationCommand.value = NavigationCommand.Back
         }
     }
 
@@ -142,11 +134,11 @@ init {
         Add geofencing and once activated show user about it.
      */
     @SuppressLint("MissingPermission")
-    fun addGeofencing(requestId : String){
+    fun addGeofencing(reminderData: ReminderDataItem){
 
         //Use the dwell transition type to reduce alert spam
         val geofence = Geofence.Builder().apply {
-            setRequestId(requestId)
+            setRequestId(reminderData.id)
             setCircularRegion(latitude.value!!,longitude.value!!,100f)
             setExpirationDuration(Geofence.NEVER_EXPIRE)
             setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER)
@@ -163,13 +155,16 @@ init {
                     addOnSuccessListener {
                         Log.i("myTag","Success!! Geofencing Activated")
                         showSnackBar.value = app.applicationContext.getString(R.string.successful_GeoFence_Activation_message)
+                        //we are sure here that all location permission is enabled
+                        validateAndSaveReminder(reminderData)
                     }
                     addOnFailureListener{
                         Log.i("myTag","Failed!! Geofencing Failed")
                         showSnackBar.value =app.applicationContext.getString(R.string.failed_Geofence_Activation_Message)
                     }
                 }
-            }
+
+    }
 
 
 
